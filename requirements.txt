@@ -4,3 +4,4 @@ openai
 groq
 st-copy-to-clipboard
 pytz
+st-copy-to-clipboard
