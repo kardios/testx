@@ -383,4 +383,3 @@ st.caption("Developed with Streamlit. Ensure API keys (GROQ_API_KEY, OPENAI_API_
 st.caption(f"Using models (check API docs for exact IDs): {', '.join(MODEL_OPTIONS.keys())}")
 st.caption("Ensure you have `streamlit-copy-to-clipboard` installed: `pip install streamlit-copy-to-clipboard`")
 
-</code_immersi
