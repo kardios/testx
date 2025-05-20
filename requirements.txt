@@ -1,0 +1,6 @@
+streamlit
+pymupdf
+openai
+groq
+st-copy-to-clipboard
+pytz
