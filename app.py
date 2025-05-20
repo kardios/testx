@@ -4,7 +4,7 @@ import fitz  # PyMuPDF
 from openai import OpenAI
 from groq import Groq
 # Removed: from dotenv import load_dotenv
-import time # For simulating work and for potential rate limit handling
+import time # For timing and potential rate limit handling
 
 # --- Configuration & Constants ---
 # Removed: load_dotenv() # No longer using python-dotenv
@@ -16,8 +16,8 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 # --- IMPORTANT: Replace these with actual API model identifiers ---
 # User-facing names to actual model IDs mapping
 MODEL_OPTIONS = {
-    "Llama-3.3-70B (Groq)": {"id": "llama3-70b-8192", "provider": "groq"}, # Example Groq ID for Llama3 70B
-    "GPT-4.1 (OpenAI)": {"id": "gpt-4o", "provider": "openai"} # Example OpenAI ID (e.g., gpt-4o, gpt-4-turbo, or a specific "gpt-4.1" if available)
+    "Llama-3.3-70B (Groq)": {"id": "llama-3.3-70b-versatile", "provider": "groq"}, # Example Groq ID for Llama3 70B
+    "GPT-4.1 (OpenAI)": {"id": "gpt-4.1", "provider": "openai"} # Example OpenAI ID (e.g., gpt-4o, gpt-4-turbo, or a specific "gpt-4.1" if available)
 }
 DEFAULT_LLM_A_NAME = "Llama-3.3-70B (Groq)"
 DEFAULT_LLM_B_NAME = "GPT-4.1 (OpenAI)"
@@ -173,9 +173,6 @@ def get_llm_response(text_input, prompt_template, llm_choice_name, summary_text_
     
     messages_for_api = [{"role": "user", "content": filled_prompt}]
     
-    # Default temperature and max_tokens for the get_llm_response function.
-    # These will be passed to the specific API call functions.
-    # You could make these configurable in the UI if desired.
     api_temperature = 0.3 
     api_max_tokens = 1500
 
@@ -224,10 +221,10 @@ with st.sidebar:
     )
 
     if st.button("Summarize Uploaded PDFs", type="primary", disabled=not uploaded_files):
-        st.session_state.results = [] # Clear previous results for a new batch
+        st.session_state.results = [] 
         st.session_state.processing_started = True
     
-    if st.session_state.results and st.session_state.processing_started: # Show clear button only after processing
+    if st.session_state.results and st.session_state.processing_started: 
         if st.button("Clear Results & Files"):
             st.session_state.results = []
             st.session_state.processing_started = False
@@ -262,7 +259,9 @@ if st.session_state.processing_started and uploaded_files:
                     "summary": None, 
                     "verification": None, 
                     "error_message": None,
-                    "extracted_text_snippet": None 
+                    "extracted_text_snippet": None,
+                    "time_step1_sec": None, # For timing Step 1
+                    "time_step2_sec": None  # For timing Step 2
                 }
                 
                 progress_percentage = (i + 1) / total_files
@@ -278,16 +277,26 @@ if st.session_state.processing_started and uploaded_files:
                         continue 
                     current_file_result["extracted_text_snippet"] = (source_text[:500] + "...") if source_text and len(source_text) > 500 else source_text
 
+                    # --- Step 1: Generate Summary (LLM A) with Timing ---
                     status_text_placeholder.text(f"({i+1}/{total_files}) Generating summary for: {uploaded_file.name} using {llm_a_choice_name}")
+                    start_time_step1 = time.perf_counter()
                     summary, summary_error = get_llm_response(source_text, PROMPT_SUMMARY_GENERATION, llm_a_choice_name)
+                    end_time_step1 = time.perf_counter()
+                    current_file_result["time_step1_sec"] = round(end_time_step1 - start_time_step1, 2)
+
                     if summary_error:
                         current_file_result["error_message"] = f"Summary generation error: {summary_error}"
                         st.session_state.results.append(current_file_result)
                         continue
                     current_file_result["summary"] = summary
 
+                    # --- Step 2: Verify Summary (LLM B) with Timing ---
                     status_text_placeholder.text(f"({i+1}/{total_files}) Verifying summary for: {uploaded_file.name} using {llm_b_choice_name}")
+                    start_time_step2 = time.perf_counter()
                     verification_output, verification_error = get_llm_response(source_text, PROMPT_SUMMARY_VERIFICATION, llm_b_choice_name, summary_text_input=summary)
+                    end_time_step2 = time.perf_counter()
+                    current_file_result["time_step2_sec"] = round(end_time_step2 - start_time_step2, 2)
+
                     if verification_error:
                         current_file_result["error_message"] = f"Summary verification error: {verification_error}"
                         current_file_result["verification"] = "Verification failed." 
@@ -323,6 +332,9 @@ if st.session_state.results:
             
             if res["summary"]:
                 st.subheader(f"Generated Summary (by {llm_a_choice_name}):")
+                if res["time_step1_sec"] is not None:
+                    st.caption(f"Generation Time: {res['time_step1_sec']:.2f} seconds")
+                    downloadable_content += f"Generation Time (Step 1): {res['time_step1_sec']:.2f} seconds\n"
                 st.markdown(res["summary"])
                 downloadable_content += f"Generated Summary (by {llm_a_choice_name}):\n{res['summary']}\n\n"
             elif not res["error_message"]:
@@ -331,6 +343,10 @@ if st.session_state.results:
 
             if res["verification"]:
                 st.subheader(f"Summary Verification (by {llm_b_choice_name}):")
+                if res["time_step2_sec"] is not None:
+                    st.caption(f"Verification Time: {res['time_step2_sec']:.2f} seconds")
+                    downloadable_content += f"Verification Time (Step 2): {res['time_step2_sec']:.2f} seconds\n"
+
                 downloadable_content += f"Summary Verification (by {llm_b_choice_name}):\n"
                 if "GREEN LIGHT" in res["verification"].upper(): 
                     st.success("✅ GREEN LIGHT")
