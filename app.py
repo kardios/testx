@@ -3,31 +3,29 @@ import os
 import fitz  # PyMuPDF
 from openai import OpenAI
 from groq import Groq
-# Removed: from dotenv import load_dotenv
-import time # For timing and potential rate limit handling
+from st_copy_to_clipboard
+import time 
 
 # --- Configuration & Constants ---
-# Removed: load_dotenv() # No longer using python-dotenv
 
 # API Key Retrieval
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 # --- IMPORTANT: Replace these with actual API model identifiers ---
-# User-facing names to actual model IDs mapping
 MODEL_OPTIONS = {
-    "Llama-3.3-70B (Groq)": {"id": "llama-3.3-70b-versatile", "provider": "groq"}, # Example Groq ID for Llama3 70B
-    "GPT-4.1 (OpenAI)": {"id": "gpt-4.1", "provider": "openai"} # Example OpenAI ID (e.g., gpt-4o, gpt-4-turbo, or a specific "gpt-4.1" if available)
+    "Llama-3.3-70B (Groq)": {"id": "llama3.3-70b-versatile", "provider": "groq"}, 
+    "GPT-4.1 (OpenAI)": {"id": "gpt-4.1", "provider": "openai"} 
 }
 DEFAULT_LLM_A_NAME = "Llama-3.3-70B (Groq)"
 DEFAULT_LLM_B_NAME = "GPT-4.1 (OpenAI)"
 
 
-# Prompts (as defined in specifications)
+# Prompts
 PROMPT_SUMMARY_GENERATION = """
 **Your Task:** Generate a high-quality, concise, and comprehensive paragraph summary of the provided [Source Text].
 
-**Instructions for Crafting the Paragraph Summary:**
+**Instructions for Crafting reputed Paragraph Summary:**
 
 1.  **Understand Thoroughly:** Read the [Source Text] carefully to identify its central theme, main arguments, key findings, and essential supporting information.
 2.  **Synthesize, Don't Just Extract:** Your summary should be a new piece of writing that expresses the core ideas of the source in your own words (as an LLM). Avoid simply copying and pasting sentences from the original text. The goal is true synthesis.
@@ -113,7 +111,7 @@ def extract_text_from_pdf(uploaded_file_obj):
         with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
             for page_num in range(len(doc)):
                 page = doc.load_page(page_num)
-                text += page.get_text("text") + "\n" # Add newline between pages
+                text += page.get_text("text") + "\n" 
     except Exception as e:
         return None, f"Error extracting text: {e}"
     if not text.strip():
@@ -126,11 +124,11 @@ def call_openai_api(model_id, messages, temperature=0.3, max_tokens=1500):
         return None, "OpenAI API key not found. Please set the OPENAI_API_KEY environment variable."
     try:
         client = OpenAI(api_key=OPENAI_API_KEY)
-        completion = client.chat.completions.create( # Changed to chat.completions.create
+        completion = client.chat.completions.create(
             model=model_id,
             messages=messages,
-            temperature=temperature, # Temperature is now used
-            max_tokens=max_tokens    # Max_tokens is now used
+            temperature=temperature, 
+            max_tokens=max_tokens    
         )
         return completion.choices[0].message.content.strip(), None
     except Exception as e:
@@ -155,8 +153,6 @@ def call_groq_api(model_id, messages, temperature=0.3, max_tokens=1500):
 def get_llm_response(text_input, prompt_template, llm_choice_name, summary_text_input=None):
     """
     Gets response from the selected LLM.
-    'text_input' is the source text.
-    'summary_text_input' is used for verification prompt.
     Returns (response_text, error_message)
     """
     model_info = MODEL_OPTIONS.get(llm_choice_name)
@@ -166,9 +162,9 @@ def get_llm_response(text_input, prompt_template, llm_choice_name, summary_text_
     model_id = model_info["id"]
     provider = model_info["provider"]
 
-    if summary_text_input: # For verification
+    if summary_text_input: 
         filled_prompt = prompt_template.format(source_text=text_input, summary_text=summary_text_input)
-    else: # For summarization
+    else: 
         filled_prompt = prompt_template.format(source_text=text_input)
     
     messages_for_api = [{"role": "user", "content": filled_prompt}]
@@ -189,14 +185,12 @@ st.set_page_config(layout="wide", page_title="Two-Step PDF Summarizer")
 st.title("📑 Two-Step PDF Summarizer")
 st.markdown("Upload PDFs, generate summaries, and verify them using your choice of LLMs. Results will appear below after processing.")
 
-# Initialize session state
 if 'results' not in st.session_state:
     st.session_state.results = []
 if 'processing_started' not in st.session_state:
     st.session_state.processing_started = False
 
 
-# --- Sidebar for Controls ---
 with st.sidebar:
     st.header("⚙️ Controls")
     uploaded_files = st.file_uploader(
@@ -230,9 +224,6 @@ with st.sidebar:
             st.session_state.processing_started = False
             st.rerun()
 
-
-# --- Main Area for Processing and Results ---
-
 if st.session_state.processing_started and uploaded_files:
     api_keys_ok = True
     if (MODEL_OPTIONS[llm_a_choice_name]["provider"] == "groq" or \
@@ -259,9 +250,9 @@ if st.session_state.processing_started and uploaded_files:
                     "summary": None, 
                     "verification": None, 
                     "error_message": None,
-                    "extracted_text_snippet": None,
-                    "time_step1_sec": None, # For timing Step 1
-                    "time_step2_sec": None  # For timing Step 2
+                    "extracted_text_snippet": None, 
+                    "time_step1_sec": None, 
+                    "time_step2_sec": None  
                 }
                 
                 progress_percentage = (i + 1) / total_files
@@ -277,7 +268,6 @@ if st.session_state.processing_started and uploaded_files:
                         continue 
                     current_file_result["extracted_text_snippet"] = (source_text[:500] + "...") if source_text and len(source_text) > 500 else source_text
 
-                    # --- Step 1: Generate Summary (LLM A) with Timing ---
                     status_text_placeholder.text(f"({i+1}/{total_files}) Generating summary for: {uploaded_file.name} using {llm_a_choice_name}")
                     start_time_step1 = time.perf_counter()
                     summary, summary_error = get_llm_response(source_text, PROMPT_SUMMARY_GENERATION, llm_a_choice_name)
@@ -290,7 +280,6 @@ if st.session_state.processing_started and uploaded_files:
                         continue
                     current_file_result["summary"] = summary
 
-                    # --- Step 2: Verify Summary (LLM B) with Timing ---
                     status_text_placeholder.text(f"({i+1}/{total_files}) Verifying summary for: {uploaded_file.name} using {llm_b_choice_name}")
                     start_time_step2 = time.perf_counter()
                     verification_output, verification_error = get_llm_response(source_text, PROMPT_SUMMARY_VERIFICATION, llm_b_choice_name, summary_text_input=summary)
@@ -316,83 +305,80 @@ if st.session_state.results:
     st.markdown("---")
     st.header("📊 Processing Results")
     
-    downloadable_content = ""
+    downloadable_content = "" # Renamed to reflect its purpose for copy/download
 
-    for res in st.session_state.results:
+    for i, res in enumerate(st.session_state.results): 
         expander_title = f"Results for: {res['filename']}"
         if res["error_message"]:
             expander_title += " (Error)"
         
         with st.expander(expander_title, expanded=False):
-            downloadable_content += f"--- Results for: {res['filename']} ---\n\n"
+            # Accumulate content for copying/downloading
+            current_file_content_for_export = f"--- Results for: {res['filename']} ---\n\n"
             
             if res["error_message"]:
                 st.error(f"Error: {res['error_message']}")
-                downloadable_content += f"Error: {res['error_message']}\n\n"
+                current_file_content_for_export += f"Error: {res['error_message']}\n\n"
             
             if res["summary"]:
                 st.subheader(f"Generated Summary (by {llm_a_choice_name}):")
                 if res["time_step1_sec"] is not None:
                     st.caption(f"Generation Time: {res['time_step1_sec']:.2f} seconds")
-                    downloadable_content += f"Generation Time (Step 1): {res['time_step1_sec']:.2f} seconds\n"
+                    current_file_content_for_export += f"Generation Time (Step 1): {res['time_step1_sec']:.2f} seconds\n"
                 st.markdown(res["summary"])
-                downloadable_content += f"Generated Summary (by {llm_a_choice_name}):\n{res['summary']}\n\n"
+                current_file_content_for_export += f"Generated Summary (by {llm_a_choice_name}):\n{res['summary']}\n\n"
             elif not res["error_message"]:
                 st.info("Summary could not be generated for this file.")
-                downloadable_content += "Summary could not be generated for this file.\n\n"
+                current_file_content_for_export += "Summary could not be generated for this file.\n\n"
 
             if res["verification"]:
                 st.subheader(f"Summary Verification (by {llm_b_choice_name}):")
                 if res["time_step2_sec"] is not None:
                     st.caption(f"Verification Time: {res['time_step2_sec']:.2f} seconds")
-                    downloadable_content += f"Verification Time (Step 2): {res['time_step2_sec']:.2f} seconds\n"
+                    current_file_content_for_export += f"Verification Time (Step 2): {res['time_step2_sec']:.2f} seconds\n"
 
-                downloadable_content += f"Summary Verification (by {llm_b_choice_name}):\n"
+                current_file_content_for_export += f"Summary Verification (by {llm_b_choice_name}):\n"
                 if "GREEN LIGHT" in res["verification"].upper(): 
                     st.success("✅ GREEN LIGHT")
-                    downloadable_content += "GREEN LIGHT\n"
+                    current_file_content_for_export += "GREEN LIGHT\n"
                 elif "RED LIGHT" in res["verification"].upper(): 
                     st.error("❌ RED LIGHT")
-                    downloadable_content += "RED LIGHT\n"
+                    current_file_content_for_export += "RED LIGHT\n"
                     try:
                         reasons_part = res["verification"].upper().split("RED LIGHT", 1)[1].strip()
                         if reasons_part:
                             st.markdown("**Reasons:**")
-                            downloadable_content += "Reasons:\n"
+                            current_file_content_for_export += "Reasons:\n"
                             reason_lines = reasons_part.split('\n')
                             for line in reason_lines:
                                 clean_line = line.strip()
                                 if clean_line.startswith("*") or clean_line.startswith("-"):
                                     st.markdown(clean_line)
-                                    downloadable_content += f"{clean_line}\n"
+                                    current_file_content_for_export += f"{clean_line}\n"
                                 elif clean_line: 
                                     st.markdown(f"* {clean_line}")
-                                    downloadable_content += f"* {clean_line}\n"
+                                    current_file_content_for_export += f"* {clean_line}\n"
                     except IndexError: 
                         pass 
                 else: 
                     st.info(res["verification"]) 
-                    downloadable_content += f"{res['verification']}\n"
-                downloadable_content += "\n"
+                    current_file_content_for_export += f"{res['verification']}\n"
+                current_file_content_for_export += "\n"
 
             elif not res["error_message"] and res["summary"]: 
                  st.info("Summary was generated but verification step did not complete or returned no output.")
-                 downloadable_content += "Summary was generated but verification step did not complete or returned no output.\n\n"
+                 current_file_content_for_export += "Summary was generated but verification step did not complete or returned no output.\n\n"
             
-            if st.checkbox("Show extracted text snippet (first 500 chars)", key=f"show_text_{res['filename']}"):
-                st.text_area("Extracted Text Snippet:", value=res.get("extracted_text_snippet", "N/A"), height=150, disabled=True, key=f"text_area_{res['filename']}")
-        
-        downloadable_content += "\n\n" 
+            downloadable_content += current_file_content_for_export + "\n\n" 
 
-    if downloadable_content:
-        st.download_button(
-            label="Download All Results as Text File",
-            data=downloadable_content.encode('utf-8'),
-            file_name="pdf_summaries_and_verifications.txt",
-            mime="text/plain"
-        )
+    if downloadable_content: # Check if there's any content to copy
+        # Use st_copy_to_clipboard instead of st.download_button
+        st_copy_to_clipboard(downloadable_content, "Copy All Results to Clipboard")
+        st.caption("Click the button above to copy all results to your clipboard.")
+
 
 st.markdown("---")
 st.caption("Developed with Streamlit. Ensure API keys (GROQ_API_KEY, OPENAI_API_KEY) are set as environment variables.")
 st.caption(f"Using models (check API docs for exact IDs): {', '.join(MODEL_OPTIONS.keys())}")
+st.caption("Ensure you have `streamlit-copy-to-clipboard` installed: `pip install streamlit-copy-to-clipboard`")
 
