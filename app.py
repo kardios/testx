@@ -3,7 +3,7 @@ import os
 import fitz  # PyMuPDF
 from openai import OpenAI
 from groq import Groq
-from st_copy_to_clipboard
+from st_copy_to_clipboard import st_copy_to_clipboard # Corrected import
 import time 
 
 # --- Configuration & Constants ---
@@ -14,8 +14,8 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 # --- IMPORTANT: Replace these with actual API model identifiers ---
 MODEL_OPTIONS = {
-    "Llama-3.3-70B (Groq)": {"id": "llama3.3-70b-versatile", "provider": "groq"}, 
-    "GPT-4.1 (OpenAI)": {"id": "gpt-4.1", "provider": "openai"} 
+    "Llama-3.3-70B (Groq)": {"id": "llama3.3-70b-versatile", "provider": "groq"}, # Example Groq ID for Llama3 70B
+    "GPT-4.1 (OpenAI)": {"id": "gpt-4.1", "provider": "openai"} # Example OpenAI ID (e.g., gpt-4o, gpt-4-turbo)
 }
 DEFAULT_LLM_A_NAME = "Llama-3.3-70B (Groq)"
 DEFAULT_LLM_B_NAME = "GPT-4.1 (OpenAI)"
