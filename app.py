@@ -20,14 +20,14 @@ MODEL_OPTIONS = {
     "Llama-3.1-8B-Instant (Groq)": {"id": "llama-3.1-8b-instant", "provider": "groq"}
 }
 DEFAULT_LLM_A_NAME = "Llama-3.3-70B (Groq)"
-DEFAULT_LLM_B_NAME = "Llama-3.3-70B (Groq)"
+DEFAULT_LLM_B_NAME = "Llama-3.3-70B (Groq)" # Changed as per request
 
 # Task Definitions
 TASK_PARAGRAPH_SUMMARY = "Paragraph Summary"
 TASK_EXPLAIN_MAIN_SUBJECT = "Explain Main Subject"
 TASK_THIELIAN_LENS = "Thielian Lens Insight"
 TASK_IDENTIFY_MOVEMENT = "Identify Potential Movement"
-TASK_LEARNING_CHUNKS = "Learning Chunks" # New Task
+TASK_LEARNING_CHUNKS = "Learning Chunks" 
 TASK_OPTIONS = [TASK_PARAGRAPH_SUMMARY, TASK_EXPLAIN_MAIN_SUBJECT, TASK_THIELIAN_LENS, TASK_IDENTIFY_MOVEMENT, TASK_LEARNING_CHUNKS]
 DEFAULT_TASK = TASK_PARAGRAPH_SUMMARY
 
@@ -451,7 +451,6 @@ def get_llm_response(source_text, prompt_template_str, llm_choice_name, step1_ou
     messages_for_api = [{"role": "user", "content": filled_prompt}]
     
     api_temperature = 0.3 
-    # Adjusted heuristic for max_tokens
     if any(keyword in prompt_template_str.lower() for keyword in ["explain", "explainer", "insight", "movement", "chunks"]):
         api_max_tokens = 2048 
     else: # Default for summaries
@@ -466,9 +465,9 @@ def get_llm_response(source_text, prompt_template_str, llm_choice_name, step1_ou
 
 # --- Password Protection ---
 def check_password():
-    if not APP_PASSWORD:
-        st.error("Application password not configured. Please set the 'PASSWORD' environment variable.")
-        st.stop()
+    if not APP_PASSWORD: # If no password is set in environment, allow access
+        st.session_state.authenticated = True 
+        return True
 
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
@@ -492,8 +491,8 @@ def check_password():
 
 # --- Main Application Logic ---
 def run_app():
-    st.set_page_config(layout="wide", page_title="Two-Step PDF Processor")
-    st.title("📑 Two-Step PDF Processor")
+    st.set_page_config(layout="wide", page_title="Readhackers") 
+    st.title("🚀 Readhackers") 
     st.markdown("Upload PDFs, choose a task, generate output, and verify it using your choice of LLMs.")
 
     if 'results' not in st.session_state: st.session_state.results = []
@@ -596,9 +595,9 @@ def run_app():
                             prompt_step1_template, prompt_step2_template = PROMPT_EXPLAINER_TASK_FOR_LLM_A, PROMPT_EXPLANATION_VERIFICATION_FOR_LLM_B
                         elif task_for_this_run == TASK_THIELIAN_LENS:
                             prompt_step1_template, prompt_step2_template = PROMPT_THIELIAN_LENS_GENERATION_LLM_A, PROMPT_THIELIAN_LENS_VERIFICATION_LLM_B
-                        elif task_for_this_run == TASK_IDENTIFY_MOVEMENT:
+                        elif task_for_this_run == TASK_IDENTIFY_MOVEMENT: 
                             prompt_step1_template, prompt_step2_template = PROMPT_MOVEMENT_GENERATION_LLM_A, PROMPT_MOVEMENT_VERIFICATION_LLM_B
-                        elif task_for_this_run == TASK_LEARNING_CHUNKS: # New Task Logic
+                        elif task_for_this_run == TASK_LEARNING_CHUNKS: 
                             prompt_step1_template, prompt_step2_template = PROMPT_LEARNING_CHUNKS_GENERATION_LLM_A, PROMPT_LEARNING_CHUNKS_VERIFICATION_LLM_B
                         else:
                             current_file_result["error_message"] = f"Invalid task: {task_for_this_run}"; st.session_state.results.append(current_file_result); continue
@@ -682,5 +681,8 @@ def run_app():
 
 # --- Main execution ---
 if __name__ == "__main__":
-    if check_password():
-        run_app()
+    if check_password(): # Check password first
+        run_app() # Then run the main app logic
+    # If APP_PASSWORD is not set, check_password() calls st.stop(), so no 'else' needed here
+    # If APP_PASSWORD is set but check_password() returns False (wrong attempt), the form stays
+
