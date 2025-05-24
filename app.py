@@ -15,7 +15,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 # --- IMPORTANT: Replace these with actual API model identifiers ---
 MODEL_OPTIONS = {
     "Llama-3.3-70B (Groq)": {"id": "llama-3.3-70b-versatile", "provider": "groq"},
-    "GPT-4.1 (OpenAI)": {"id": "gpt-4.1", "provider": "openai"},
+    "GPT-4.1 (OpenAI)": {"id": "gpt-4.1", "provider": "openai"}, # CRITICAL: Replace "gpt-4.1" with a valid OpenAI model ID like "gpt-4o" or "gpt-4-turbo"
     "Llama-3.1-8B-Instant (Groq)": {"id": "llama-3.1-8b-instant", "provider": "groq"}
 }
 DEFAULT_LLM_A_NAME = "Llama-3.3-70B (Groq)"
@@ -24,7 +24,8 @@ DEFAULT_LLM_B_NAME = "GPT-4.1 (OpenAI)"
 # Task Definitions
 TASK_PARAGRAPH_SUMMARY = "Paragraph Summary"
 TASK_EXPLAIN_MAIN_SUBJECT = "Explain Main Subject"
-TASK_OPTIONS = [TASK_PARAGRAPH_SUMMARY, TASK_EXPLAIN_MAIN_SUBJECT]
+TASK_THIELIAN_LENS = "Thielian Lens Insight"
+TASK_OPTIONS = [TASK_PARAGRAPH_SUMMARY, TASK_EXPLAIN_MAIN_SUBJECT, TASK_THIELIAN_LENS]
 DEFAULT_TASK = TASK_PARAGRAPH_SUMMARY
 
 # Prompts
@@ -173,6 +174,73 @@ Critically evaluate the provided [Generated Explanation] against the original [S
 **Assessment Output:**
 """
 
+PROMPT_THIELIAN_LENS_GENERATION_LLM_A = """
+Read the [Source Text] carefully.
+Your task is to act as a contrarian thinker, inspired by Peter Thiel's question in *Zero to One* ("What important truth do very few people agree with you on?").
+Identify one meaningful and non-obvious insight from within the [Source Text] that challenges conventional wisdom or presents a viewpoint related to the text's content that few people would readily agree with. The insight must be well-grounded in the provided text, not an external opinion.
+
+Present your finding in the following format:
+
+**Contrarian Insight:**
+[Your identified contrarian insight here, articulated clearly and concisely based on the Source Text.]
+
+[Source Text]:
+\"\"\"
+{source_text}
+\"\"\"
+
+**Generated Output:**
+"""
+
+PROMPT_THIELIAN_LENS_VERIFICATION_LLM_B = """
+**Your Role:** You are a Critical Reviewer tasked with evaluating an AI-generated "Contrarian Insight" based on a [Source Text].
+
+**Your Task:**
+Assess the provided [Generated Insight] against the original [Source Text] and the principles of identifying a meaningful, contrarian insight that is grounded in the text. Determine if it warrants a 'GREEN LIGHT' (a valid contrarian insight well-grounded in the text) or a 'RED LIGHT' (flawed).
+
+**Inputs:**
+1.  **[Source Text]:** The original document.
+2.  **[Generated Insight]:** The output from another AI, which should be formatted with a "**Contrarian Insight:**" heading followed by the insight text.
+
+**Evaluation Criteria:**
+
+1.  **Grounded in Source:** Is the [Generated Insight] plausibly derived from, supported by, or a reasonable (even if contrarian) interpretation of the [Source Text]? It must not be a random statement disconnected from the document's content.
+2.  **Contrarian Nature:** Does the insight genuinely challenge conventional wisdom generally associated with the topic of the [Source Text], offer a non-obvious viewpoint, or state something relevant to the text that most people might not immediately agree with or consider?
+3.  **Meaningfulness & Non-Triviality:** Is the insight substantive and thought-provoking in relation to the [Source Text], rather than being a trivial observation, a nonsensical statement, or an obviously false claim merely presented as contrarian?
+4.  **Clarity of Articulation:** Is the insight expressed clearly and understandably?
+
+**Output Instructions:**
+
+* If the [Generated Insight] meets all the following conditions:
+    a) It is well-grounded in the [Source Text].
+    b) It genuinely presents a contrarian/non-obvious perspective relevant to the text's content.
+    c) It is meaningful and clearly articulated.
+  Respond with **only** the following words:
+    `GREEN LIGHT`
+
+* Otherwise, if the [Generated Insight] has one or more significant flaws based on the criteria (e.g., not from source, not contrarian, trivial, unclear), respond with:
+    `RED LIGHT`
+    Immediately followed by a brief, bulleted list identifying the primary reason(s) for the 'RED LIGHT'. Focus on the 1-3 most critical issues from the following possibilities:
+    * `RED LIGHT`
+        * Grounding: Insight not supported by or is irrelevant to the Source Text.
+        * Contrarianism: States a common/widely accepted view, or is not genuinely contrarian in the context of the text.
+        * Meaningfulness: Insight is trivial, nonsensical, or poorly articulated.
+        * Validity: Insight is an extreme or unfounded claim with no reasonable basis in the text, even for a contrarian argument.
+---
+
+**Please begin your assessment.**
+
+**[Source Text]:**
+\"\"\"
+{source_text}
+\"\"\"
+
+**[Generated Insight]:**
+\"\"\"
+{step1_output} 
+\"\"\" 
+**Assessment Output:**
+"""
 
 # --- Core Functions ---
 
@@ -191,7 +259,7 @@ def extract_text_from_pdf(uploaded_file_obj):
         return None, "No text content found in PDF."
     return text, None
 
-def call_openai_api(model_id, messages, temperature=0.3, max_tokens=2048): # Increased max_tokens for explanation
+def call_openai_api(model_id, messages, temperature=0.3, max_tokens=2048):
     """Helper function to call OpenAI API using client.chat.completions.create."""
     if not OPENAI_API_KEY:
         return None, "OpenAI API key not found. Please set the OPENAI_API_KEY environment variable."
@@ -207,7 +275,7 @@ def call_openai_api(model_id, messages, temperature=0.3, max_tokens=2048): # Inc
     except Exception as e:
         return None, f"OpenAI API Error (using chat.completions.create): {e}"
 
-def call_groq_api(model_id, messages, temperature=0.3, max_tokens=2048): # Increased max_tokens for explanation
+def call_groq_api(model_id, messages, temperature=0.3, max_tokens=2048):
     """Helper function to call Groq API."""
     if not GROQ_API_KEY:
         return None, "Groq API key not found. Please set the GROQ_API_KEY environment variable."
@@ -226,10 +294,6 @@ def call_groq_api(model_id, messages, temperature=0.3, max_tokens=2048): # Incre
 def get_llm_response(source_text, prompt_template_str, llm_choice_name, step1_output_for_step2=None):
     """
     Gets response from the selected LLM.
-    'source_text' is the original PDF text.
-    'prompt_template_str' is the string of the prompt to use.
-    'llm_choice_name' is the user-selected LLM name.
-    'step1_output_for_step2' is the output from LLM A, used as input for LLM B's prompt.
     Returns (response_text, error_message)
     """
     model_info = MODEL_OPTIONS.get(llm_choice_name)
@@ -239,21 +303,18 @@ def get_llm_response(source_text, prompt_template_str, llm_choice_name, step1_ou
     model_id = model_info["id"]
     provider = model_info["provider"]
 
-    if step1_output_for_step2: # This is for Step 2 (Verification)
+    if step1_output_for_step2: 
         filled_prompt = prompt_template_str.format(source_text=source_text, step1_output=step1_output_for_step2)
-    else: # This is for Step 1 (Generation/Explanation)
+    else: 
         filled_prompt = prompt_template_str.format(source_text=source_text)
     
     messages_for_api = [{"role": "user", "content": filled_prompt}]
     
-    # Max tokens might need to be different for summarization vs explanation
-    # For now, using a general higher value for explanations.
-    # Paragraph summary prompt itself asks for conciseness.
     api_temperature = 0.3 
-    if "explain" in prompt_template_str.lower() or "explainer" in prompt_template_str.lower() : # Crude check for explainer prompt
-        api_max_tokens = 2048 # Allow more tokens for detailed explanations
-    else:
-        api_max_tokens = 1024 # Default for summaries
+    if "explain" in prompt_template_str.lower() or "explainer" in prompt_template_str.lower() or "insight" in prompt_template_str.lower() :
+        api_max_tokens = 2048 
+    else: # Default for summaries
+        api_max_tokens = 1024 
 
     if provider == "openai":
         return call_openai_api(model_id, messages_for_api, temperature=api_temperature, max_tokens=api_max_tokens)
@@ -266,12 +327,23 @@ def get_llm_response(source_text, prompt_template_str, llm_choice_name, step1_ou
 
 st.set_page_config(layout="wide", page_title="Two-Step PDF Processor")
 st.title("📑 Two-Step PDF Processor")
-st.markdown("Upload PDFs, choose a task (summarize or explain), generate output, and verify it using your choice of LLMs.")
+st.markdown("Upload PDFs, choose a task, generate output, and verify it using your choice of LLMs.")
 
+# Initialize session state variables if they don't exist
 if 'results' not in st.session_state:
     st.session_state.results = []
-if 'processing_started' not in st.session_state:
-    st.session_state.processing_started = False
+if 'run_processing_flag' not in st.session_state: # Flag to trigger processing on button click
+    st.session_state.run_processing_flag = False
+if 'ui_task_selection' not in st.session_state: # Stores current UI selection for task
+    st.session_state.ui_task_selection = DEFAULT_TASK
+# These store the settings *used for the last initiated run*
+if 'task_for_run' not in st.session_state:
+    st.session_state.task_for_run = DEFAULT_TASK
+if 'llm_a_for_run' not in st.session_state:
+    st.session_state.llm_a_for_run = DEFAULT_LLM_A_NAME
+if 'llm_b_for_run' not in st.session_state:
+    st.session_state.llm_b_for_run = DEFAULT_LLM_B_NAME
+
 
 with st.sidebar:
     st.header("⚙️ Controls")
@@ -282,44 +354,70 @@ with st.sidebar:
         help="Upload one or more PDF files."
     )
 
-    selected_task = st.selectbox(
+    def on_task_change_callback():
+        # If task selection changes in UI, clear previous results and reset processing trigger
+        # The actual st.session_state.ui_task_selection will be updated by Streamlit's widget state
+        if st.session_state.ui_task_selector != st.session_state.task_for_run : # Check if it really changed from last run's task
+            st.session_state.results = []
+            st.session_state.run_processing_flag = False
+            # task_for_run will be updated by the selectbox itself via its key
+
+    # UI Task Selector - its value is stored in st.session_state.ui_task_selector by Streamlit
+    st.session_state.ui_task_selection = st.selectbox(
         "Select Task:",
         options=TASK_OPTIONS,
-        index=TASK_OPTIONS.index(DEFAULT_TASK),
+        index=TASK_OPTIONS.index(st.session_state.ui_task_selection), 
+        on_change=on_task_change_callback,
+        key="ui_task_selector", # Explicit key for the widget
         help="Choose the operation to perform on the PDFs."
     )
 
     st.subheader("Select LLMs for Processing:")
-    llm_a_choice_name = st.selectbox(
-        f"Step 1: {selected_task} with:",
+    # LLM selectors now use the current UI task selection for their labels
+    # Their actual values will be snapshotted when "Process" button is clicked
+    current_llm_a_selection = st.selectbox(
+        f"Step 1: {st.session_state.ui_task_selection} with:",
         options=list(MODEL_OPTIONS.keys()),
-        index=list(MODEL_OPTIONS.keys()).index(DEFAULT_LLM_A_NAME) if DEFAULT_LLM_A_NAME in MODEL_OPTIONS else 0,
-        help=f"Choose the LLM to perform '{selected_task}'."
+        index=list(MODEL_OPTIONS.keys()).index(st.session_state.get('llm_a_for_run', DEFAULT_LLM_A_NAME)) \
+            if st.session_state.get('llm_a_for_run', DEFAULT_LLM_A_NAME) in MODEL_OPTIONS else 0,
+        key="ui_llm_a_selector",
+        help=f"Choose the LLM to perform '{st.session_state.ui_task_selection}'."
     )
-    llm_b_choice_name = st.selectbox(
+    current_llm_b_selection = st.selectbox(
         "Step 2: Verify Output with:",
         options=list(MODEL_OPTIONS.keys()),
-        index=list(MODEL_OPTIONS.keys()).index(DEFAULT_LLM_B_NAME) if DEFAULT_LLM_B_NAME in MODEL_OPTIONS else 0,
+        index=list(MODEL_OPTIONS.keys()).index(st.session_state.get('llm_b_for_run', DEFAULT_LLM_B_NAME)) \
+            if st.session_state.get('llm_b_for_run', DEFAULT_LLM_B_NAME) in MODEL_OPTIONS else 0,
+        key="ui_llm_b_selector",
         help="Choose the LLM to verify the output from Step 1."
     )
 
-    if st.button(f"Process Uploaded PDFs with '{selected_task}' Task", type="primary", disabled=not uploaded_files):
+    if st.button(f"Process Uploaded PDFs with '{st.session_state.ui_task_selection}' Task", type="primary", disabled=not uploaded_files):
         st.session_state.results = [] 
-        st.session_state.processing_started = True
-        st.session_state.current_task_for_results = selected_task # Store task type for display
+        st.session_state.run_processing_flag = True
+        # Snapshot the settings for this run
+        st.session_state.task_for_run = st.session_state.ui_task_selection
+        st.session_state.llm_a_for_run = current_llm_a_selection
+        st.session_state.llm_b_for_run = current_llm_b_selection
+        st.rerun() # Rerun to ensure the main processing block is entered with the flag set
     
-    if st.session_state.results and st.session_state.processing_started: 
+    if st.session_state.results: 
         if st.button("Clear Results & Files"):
             st.session_state.results = []
-            st.session_state.processing_started = False
+            st.session_state.run_processing_flag = False
+            # Reset task_for_run to default or current UI selection if needed
+            # st.session_state.ui_task_selection = DEFAULT_TASK # Reset UI task to default
+            # st.session_state.task_for_run = DEFAULT_TASK
             st.rerun()
 
-if st.session_state.processing_started and uploaded_files:
+if st.session_state.get('run_processing_flag', False) and uploaded_files:
     api_keys_ok = True
-    # Consolidate API key checks
+    # Use the snapshotted LLM choices for API key checks
     providers_in_use = set()
-    if llm_a_choice_name in MODEL_OPTIONS: providers_in_use.add(MODEL_OPTIONS[llm_a_choice_name]["provider"])
-    if llm_b_choice_name in MODEL_OPTIONS: providers_in_use.add(MODEL_OPTIONS[llm_b_choice_name]["provider"])
+    if st.session_state.llm_a_for_run in MODEL_OPTIONS: 
+        providers_in_use.add(MODEL_OPTIONS[st.session_state.llm_a_for_run]["provider"])
+    if st.session_state.llm_b_for_run in MODEL_OPTIONS: 
+        providers_in_use.add(MODEL_OPTIONS[st.session_state.llm_b_for_run]["provider"])
 
     if "groq" in providers_in_use and not GROQ_API_KEY:
         st.error("Groq API key is missing. Please set the GROQ_API_KEY environment variable.")
@@ -330,17 +428,23 @@ if st.session_state.processing_started and uploaded_files:
 
     if not api_keys_ok:
         st.warning("Processing cannot start due to missing API keys.")
-        st.session_state.processing_started = False 
+        st.session_state.run_processing_flag = False # Reset flag
     else:
         total_files = len(uploaded_files)
         progress_bar_placeholder = st.empty() 
         status_text_placeholder = st.empty()   
 
-        with st.spinner(f"Processing {total_files} PDF(s) for '{st.session_state.current_task_for_results}' task... Please wait."):
+        task_for_this_run = st.session_state.task_for_run
+        llm_a_for_this_run = st.session_state.llm_a_for_run
+        llm_b_for_this_run = st.session_state.llm_b_for_run
+
+        with st.spinner(f"Processing {total_files} PDF(s) for '{task_for_this_run}' task... Please wait."):
             for i, uploaded_file in enumerate(uploaded_files):
                 current_file_result = {
                     "filename": uploaded_file.name, 
-                    "task_performed": st.session_state.current_task_for_results,
+                    "task_performed": task_for_this_run,
+                    "llm_a_used": llm_a_for_this_run, # Store LLM used for this result
+                    "llm_b_used": llm_b_for_this_run, # Store LLM used for this result
                     "step1_output": None, 
                     "step2_verification": None, 
                     "error_message": None,
@@ -362,37 +466,35 @@ if st.session_state.processing_started and uploaded_files:
                         continue 
                     current_file_result["extracted_text_snippet"] = (source_text[:500] + "...") if source_text and len(source_text) > 500 else source_text
 
-                    # --- Determine Prompts based on selected_task ---
-                    if st.session_state.current_task_for_results == TASK_PARAGRAPH_SUMMARY:
-                        prompt_step1 = PROMPT_SUMMARY_GENERATION
-                        prompt_step2 = PROMPT_SUMMARY_VERIFICATION
-                        step1_output_header = "Generated Paragraph Summary"
-                    elif st.session_state.current_task_for_results == TASK_EXPLAIN_MAIN_SUBJECT:
-                        prompt_step1 = PROMPT_EXPLAINER_TASK_FOR_LLM_A
-                        prompt_step2 = PROMPT_EXPLANATION_VERIFICATION_FOR_LLM_B
-                        step1_output_header = "Generated Explanation of Main Subject"
+                    if task_for_this_run == TASK_PARAGRAPH_SUMMARY:
+                        prompt_step1_template = PROMPT_SUMMARY_GENERATION
+                        prompt_step2_template = PROMPT_SUMMARY_VERIFICATION
+                    elif task_for_this_run == TASK_EXPLAIN_MAIN_SUBJECT:
+                        prompt_step1_template = PROMPT_EXPLAINER_TASK_FOR_LLM_A
+                        prompt_step2_template = PROMPT_EXPLANATION_VERIFICATION_FOR_LLM_B
+                    elif task_for_this_run == TASK_THIELIAN_LENS:
+                        prompt_step1_template = PROMPT_THIELIAN_LENS_GENERATION_LLM_A
+                        prompt_step2_template = PROMPT_THIELIAN_LENS_VERIFICATION_LLM_B
                     else:
-                        current_file_result["error_message"] = "Invalid task selected."
+                        current_file_result["error_message"] = f"Invalid task selected: {task_for_this_run}"
                         st.session_state.results.append(current_file_result)
                         continue
                     
-                    # --- Step 1: Task Execution (LLM A) with Timing ---
-                    status_text_placeholder.text(f"({i+1}/{total_files}) Performing Step 1 ({st.session_state.current_task_for_results}) for: {uploaded_file.name} using {llm_a_choice_name}")
+                    status_text_placeholder.text(f"({i+1}/{total_files}) Performing Step 1 ({task_for_this_run}) for: {uploaded_file.name} using {llm_a_for_this_run}")
                     start_time_step1 = time.perf_counter()
-                    step1_output, step1_error = get_llm_response(source_text, prompt_step1, llm_a_choice_name)
+                    step1_output, step1_error = get_llm_response(source_text, prompt_step1_template, llm_a_for_this_run)
                     end_time_step1 = time.perf_counter()
                     current_file_result["time_step1_sec"] = round(end_time_step1 - start_time_step1, 2)
 
                     if step1_error:
-                        current_file_result["error_message"] = f"Step 1 ({st.session_state.current_task_for_results}) error: {step1_error}"
+                        current_file_result["error_message"] = f"Step 1 ({task_for_this_run}) error: {step1_error}"
                         st.session_state.results.append(current_file_result)
                         continue
                     current_file_result["step1_output"] = step1_output
 
-                    # --- Step 2: Verification (LLM B) with Timing ---
-                    status_text_placeholder.text(f"({i+1}/{total_files}) Performing Step 2 (Verification) for: {uploaded_file.name} using {llm_b_choice_name}")
+                    status_text_placeholder.text(f"({i+1}/{total_files}) Performing Step 2 (Verification) for: {uploaded_file.name} using {llm_b_for_this_run}")
                     start_time_step2 = time.perf_counter()
-                    verification_output, verification_error = get_llm_response(source_text, prompt_step2, llm_b_choice_name, step1_output_for_step2=step1_output)
+                    verification_output, verification_error = get_llm_response(source_text, prompt_step2_template, llm_b_for_this_run, step1_output_for_step2=step1_output)
                     end_time_step2 = time.perf_counter()
                     current_file_result["time_step2_sec"] = round(end_time_step2 - start_time_step2, 2)
 
@@ -408,41 +510,40 @@ if st.session_state.processing_started and uploaded_files:
                 
                 st.session_state.results.append(current_file_result)
 
-            status_text_placeholder.success(f"All files processed for '{st.session_state.current_task_for_results}' task!")
+            status_text_placeholder.success(f"All files processed for '{task_for_this_run}' task!")
             progress_bar_placeholder.empty() 
+        st.session_state.run_processing_flag = False # Reset the flag after processing is done or if API keys were missing
 
 if st.session_state.results:
     st.markdown("---")
     st.header("📊 Processing Results")
     
-    # Retrieve task type used for this batch of results for consistent display headers
-    # Assuming all results in current st.session_state.results are from the same task batch
-    # This relies on st.session_state.current_task_for_results being set when processing starts
-    task_performed_for_display = st.session_state.get("current_task_for_results", "N/A")
-    
-    llm_a_display_name = llm_a_choice_name # Capture from sidebar selection
-    llm_b_display_name = llm_b_choice_name # Capture from sidebar selection
-
     downloadable_content = "" 
 
     for i, res in enumerate(st.session_state.results): 
-        expander_title = f"Results for: {res['filename']} (Task: {res.get('task_performed', task_performed_for_display)})"
+        task_label = res.get('task_performed', "N/A") # Get task from result item
+        llm_a_used_for_res = res.get('llm_a_used', "N/A")
+        llm_b_used_for_res = res.get('llm_b_used', "N/A")
+
+        expander_title = f"Results for: {res['filename']} (Task: {task_label})"
         if res["error_message"]:
             expander_title += " (Error)"
         
         with st.expander(expander_title, expanded=False):
             downloadable_content += f"--- Results for: {res['filename']} ---\n"
-            downloadable_content += f"Task Performed: {res.get('task_performed', task_performed_for_display)}\n\n"
+            downloadable_content += f"Task Performed: {task_label}\n\n"
             
             if res["error_message"]:
                 st.error(f"Error: {res['error_message']}")
                 downloadable_content += f"Error: {res['error_message']}\n\n"
             
-            step1_output_header_display = "Step 1 Output"
-            if res.get('task_performed', task_performed_for_display) == TASK_PARAGRAPH_SUMMARY:
-                step1_output_header_display = f"Generated Paragraph Summary (by {llm_a_display_name})"
-            elif res.get('task_performed', task_performed_for_display) == TASK_EXPLAIN_MAIN_SUBJECT:
-                step1_output_header_display = f"Generated Explanation (by {llm_a_display_name})"
+            step1_output_header_display = f"Step 1 Output (by {llm_a_used_for_res})" 
+            if task_label == TASK_PARAGRAPH_SUMMARY:
+                step1_output_header_display = f"Generated Paragraph Summary (by {llm_a_used_for_res})"
+            elif task_label == TASK_EXPLAIN_MAIN_SUBJECT:
+                step1_output_header_display = f"Generated Explanation (by {llm_a_used_for_res})"
+            elif task_label == TASK_THIELIAN_LENS:
+                 step1_output_header_display = f"Generated Thielian Lens Insight (by {llm_a_used_for_res})"
 
 
             if res["step1_output"]:
@@ -450,19 +551,19 @@ if st.session_state.results:
                 if res["time_step1_sec"] is not None:
                     st.caption(f"Step 1 Time: {res['time_step1_sec']:.2f} seconds")
                     downloadable_content += f"Step 1 Time: {res['time_step1_sec']:.2f} seconds\n"
-                st.markdown(res["step1_output"]) # LLM output might contain markdown
+                st.markdown(res["step1_output"]) 
                 downloadable_content += f"{step1_output_header_display}:\n{res['step1_output']}\n\n"
             elif not res["error_message"]:
                 st.info("Step 1 output could not be generated for this file.")
                 downloadable_content += "Step 1 output could not be generated for this file.\n\n"
 
             if res["step2_verification"]:
-                st.subheader(f"Step 2 Verification (by {llm_b_display_name}):")
+                st.subheader(f"Step 2 Verification (by {llm_b_used_for_res}):")
                 if res["time_step2_sec"] is not None:
                     st.caption(f"Step 2 Time: {res['time_step2_sec']:.2f} seconds")
                     downloadable_content += f"Step 2 Time: {res['time_step2_sec']:.2f} seconds\n"
 
-                downloadable_content += f"Step 2 Verification (by {llm_b_display_name}):\n"
+                downloadable_content += f"Step 2 Verification (by {llm_b_used_for_res}):\n"
                 if "GREEN LIGHT" in res["step2_verification"].upper(): 
                     st.success("✅ GREEN LIGHT")
                     downloadable_content += "GREEN LIGHT\n"
@@ -494,7 +595,7 @@ if st.session_state.results:
                  st.info("Step 1 output was generated but Step 2 (Verification) did not complete or returned no output.")
                  downloadable_content += "Step 1 output was generated but Step 2 (Verification) did not complete or returned no output.\n\n"
             
-            downloadable_content += "\n\n" # Extra space between file results in download
+            downloadable_content += "\n\n" 
 
     if downloadable_content: 
         st_copy_to_clipboard(downloadable_content, "Copy All Results to Clipboard")
@@ -505,3 +606,4 @@ st.markdown("---")
 st.caption("Developed with Streamlit. Ensure API keys (GROQ_API_KEY, OPENAI_API_KEY) are set as environment variables.")
 st.caption(f"Using models (check API docs for exact IDs): {', '.join(MODEL_OPTIONS.keys())}")
 st.caption("Ensure you have `streamlit-copy-to-clipboard` installed: `pip install streamlit-copy-to-clipboard`")
+
