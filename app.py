@@ -598,12 +598,6 @@ def run_app():
             if st.button("Clear Results"):
                 st.session_state.results = []
                 st.session_state.run_processing_flag = False
-                
-                if 'url_input' in st.session_state:
-                    st.session_state.url_input = ""
-                if 'text_input' in st.session_state:
-                    st.session_state.text_input = ""
-                
                 st.rerun()
 
     if st.session_state.get('run_processing_flag', False):
@@ -701,7 +695,7 @@ def run_app():
 
                         status_text_placeholder.text(f"Step 1 ({task_for_this_run}) for: {identifier}...")
                         start_time_step1 = time.perf_counter()
-                        step1_output, step1_error = get_llm_response(source_text, prompt_step1_template, llm_a_for_this_run)
+                        step1_output, step1_error = get_llm_response(source_text, prompt_template_str, llm_a_for_this_run)
                         current_file_result["time_step1_sec"] = round(time.perf_counter() - start_time_step1, 2)
                         if step1_error:
                             current_file_result["error_message"] = f"Step 1 error: {step1_error}"
