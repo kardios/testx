@@ -13,6 +13,7 @@ import requests # New import for URL fetching
 # API Key Retrieval
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+JINA_API_KEY = os.environ.get("JINA_API_KEY") # NEW: Jina API Key
 APP_PASSWORD = os.environ.get("PASSWORD") # Password for app access
 
 # --- IMPORTANT: These models are specially chosen for the app ---
@@ -408,24 +409,27 @@ def extract_text_from_pdf(uploaded_file_obj):
         return None, "No text content found in PDF."
     return text, None
 
-# --- NEW: Helper functions for URL input ---
+# --- Helper functions for URL input ---
 def extract_urls_from_text(raw_text):
     """Finds all unique URLs in a block of text using regex."""
     if not raw_text:
         return []
-    # Regex to find URLs
     url_pattern = re.compile(r'https?://[^\s/$.?#].[^\s]*')
     found_urls = url_pattern.findall(raw_text)
-    # Return a list of unique URLs
     return list(dict.fromkeys(found_urls))
 
+# --- UPDATED: Function now uses JINA_API_KEY if available ---
 def fetch_content_from_url(url):
     """Fetches and returns the text content of a URL using Jina AI Reader."""
     jina_reader_url = f"https://r.jina.ai/{url}"
+    headers = {}
+    # If a Jina API key is provided, add it to the request headers.
+    if JINA_API_KEY:
+        headers['Authorization'] = f'Bearer {JINA_API_KEY}'
+
     try:
-        response = requests.get(jina_reader_url, timeout=30)
-        response.raise_for_status()  # Raises an HTTPError for bad responses (4xx or 5xx)
-        # Jina returns Markdown content, which is great as is.
+        response = requests.get(jina_reader_url, headers=headers, timeout=30)
+        response.raise_for_status()
         return response.text, None
     except requests.exceptions.RequestException as e:
         return None, f"Error fetching URL content: {e}"
@@ -499,7 +503,7 @@ def check_password():
     Checks if the user is authenticated. If a password is set in the environment,
     it displays a login form. Otherwise, it grants access.
     """
-    if not APP_PASSWORD: # If no password is set, allow access
+    if not APP_PASSWORD:
         st.session_state.authenticated = True
         return True
 
@@ -532,7 +536,6 @@ def run_app():
     st.title("🚀 Readhackers")
     st.markdown("Process content from PDFs, URLs, or pasted text using your choice of LLMs.")
 
-    # Initialize session state variables
     if 'results' not in st.session_state: st.session_state.results = []
     if 'run_processing_flag' not in st.session_state: st.session_state.run_processing_flag = False
     if 'ui_task_selection' not in st.session_state: st.session_state.ui_task_selection = DEFAULT_TASK
@@ -541,18 +544,15 @@ def run_app():
     if 'llm_b_for_run' not in st.session_state: st.session_state.llm_b_for_run = DEFAULT_LLM_B_NAME
     if 'input_method' not in st.session_state: st.session_state.input_method = "Upload PDF"
 
-    # --- Sidebar Controls ---
     with st.sidebar:
         st.header("⚙️ Controls")
 
-        # --- NEW: Input method selection ---
         st.session_state.input_method = st.radio(
             "Choose your input method:",
             ("Upload PDF", "Enter URLs", "Paste Text"),
             key="input_method_selector"
         )
 
-        # --- NEW: Conditional input widgets ---
         uploaded_files = []
         url_input_text = ""
         pasted_text = ""
@@ -593,7 +593,6 @@ def run_app():
             key="ui_llm_b_selector", help="Choose LLM for the verification step."
         )
 
-        # --- NEW: Updated button logic ---
         is_input_provided = uploaded_files or url_input_text.strip() or pasted_text.strip()
         if st.button(f"Process {st.session_state.input_method}", type="primary", disabled=not is_input_provided):
             st.session_state.results = []
@@ -607,15 +606,12 @@ def run_app():
             if st.button("Clear Results"):
                 st.session_state.results = []
                 st.session_state.run_processing_flag = False
-                # Clear input fields
                 st.session_state.pdf_uploader = []
                 st.session_state.url_input = ""
                 st.session_state.text_input = ""
                 st.rerun()
 
-    # --- Main Processing Logic ---
     if st.session_state.get('run_processing_flag', False):
-        # --- NEW: Build the input queue ---
         input_queue = []
         if st.session_state.input_method == "Upload PDF":
             input_queue = [{"identifier": f.name, "data": f, "type": "pdf"} for f in uploaded_files]
@@ -631,7 +627,6 @@ def run_app():
             st.session_state.run_processing_flag = False
             st.rerun()
 
-        # Check for necessary API keys before starting
         api_keys_ok = True
         providers_in_use = set()
         if st.session_state.llm_a_for_run in MODEL_OPTIONS:
@@ -655,7 +650,6 @@ def run_app():
             llm_b_for_this_run = st.session_state.llm_b_for_run
 
             with st.spinner(f"Processing {total_items} item(s) for '{task_for_this_run}' task..."):
-                # --- NEW: Loop over the unified input queue ---
                 for i, item in enumerate(input_queue):
                     identifier = item['identifier']
                     current_file_result = {
@@ -669,7 +663,6 @@ def run_app():
                     status_text_placeholder.text(f"Processing item {i+1}/{total_items}: {identifier}...")
 
                     try:
-                        # --- NEW: Get source text based on input type ---
                         source_text, extraction_error = None, None
                         if item['type'] == 'pdf':
                             source_text, extraction_error = extract_text_from_pdf(item['data'])
@@ -690,7 +683,6 @@ def run_app():
 
                         current_file_result["extracted_text_snippet"] = (source_text[:500] + "...") if len(source_text) > 500 else source_text
 
-                        # Select prompts (this logic remains the same)
                         if task_for_this_run == TASK_PARAGRAPH_SUMMARY:
                             prompt_step1_template, prompt_step2_template = PROMPT_SUMMARY_GENERATION, PROMPT_SUMMARY_VERIFICATION
                         elif task_for_this_run == TASK_EXPLAIN_MAIN_SUBJECT:
@@ -706,7 +698,6 @@ def run_app():
                             st.session_state.results.append(current_file_result)
                             continue
 
-                        # Step 1: Generation
                         status_text_placeholder.text(f"Step 1 ({task_for_this_run}) for: {identifier}...")
                         start_time_step1 = time.perf_counter()
                         step1_output, step1_error = get_llm_response(source_text, prompt_step1_template, llm_a_for_this_run)
@@ -716,7 +707,6 @@ def run_app():
                             st.session_state.results.append(current_file_result); continue
                         current_file_result["step1_output"] = step1_output
 
-                        # Step 2: Verification
                         status_text_placeholder.text(f"Step 2 (Verification) for: {identifier}...")
                         start_time_step2 = time.perf_counter()
                         verification_output, verification_error = get_llm_response(source_text, prompt_step2_template, llm_b_for_this_run, step1_output_for_step2=step1_output)
@@ -735,7 +725,6 @@ def run_app():
                 progress_bar_placeholder.empty()
             st.session_state.run_processing_flag = False
 
-    # --- Display Results ---
     if st.session_state.results:
         st.markdown("---")
         st.header("📊 Processing Results")
@@ -744,7 +733,6 @@ def run_app():
             task_label = res.get('task_performed', "N/A")
             llm_a_used = res.get('llm_a_used', "N/A")
             llm_b_used = res.get('llm_b_used', "N/A")
-            # Use the generic 'filename' key which now holds the identifier (filename, URL, or "Pasted Text")
             expander_title = f"Results for: {res['filename']} (Task: {task_label})"
             if res["error_message"]: expander_title += " (⚠️ Error)"
 
@@ -813,14 +801,14 @@ def run_app():
             st_copy_to_clipboard(downloadable_content, "Copy All Results to Clipboard")
             st.caption("Click the button above to copy all expanded results to your clipboard.")
 
-    # --- Footer ---
     st.markdown("---")
-    st.caption("Ensure API keys (GROQ_API_KEY, OPENAI_API_KEY) and an optional PASSWORD are set as environment variables.")
+    # --- UPDATED: Footer now mentions JINA_API_KEY ---
+    st.caption("Ensure API keys (GROQ_API_KEY, OPENAI_API_KEY, JINA_API_KEY) and an optional PASSWORD are set as environment variables.")
     st.caption(f"Available Models: {', '.join(MODEL_OPTIONS.keys())}")
     st.caption("This app requires `streamlit`, `PyMuPDF`, `openai`, `groq`, `requests`, and `streamlit-copy-to-clipboard`.")
 
 
 # --- Main execution ---
 if __name__ == "__main__":
-    if check_password(): # Check password first
-        run_app() # Then run the main app logic
+    if check_password():
+        run_app()
