@@ -13,7 +13,7 @@ import requests # New import for URL fetching
 # API Key Retrieval
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-JINA_API_KEY = os.environ.get("JINA_API_KEY") # NEW: Jina API Key
+JINA_API_KEY = os.environ.get("JINA_API_KEY") # Jina API Key
 APP_PASSWORD = os.environ.get("PASSWORD") # Password for app access
 
 # --- IMPORTANT: These models are specially chosen for the app ---
@@ -540,27 +540,21 @@ def run_app():
     if 'task_for_run' not in st.session_state: st.session_state.task_for_run = DEFAULT_TASK
     if 'llm_a_for_run' not in st.session_state: st.session_state.llm_a_for_run = DEFAULT_LLM_A_NAME
     if 'llm_b_for_run' not in st.session_state: st.session_state.llm_b_for_run = DEFAULT_LLM_B_NAME
-    if 'input_method' not in st.session_state: st.session_state.input_method = "Upload PDF"
 
     with st.sidebar:
         st.header("⚙️ Controls")
 
-        st.session_state.input_method = st.radio(
-            "Choose your input method:",
-            ("Upload PDF", "Enter URLs", "Paste Text"),
-            key="input_method_selector"
-        )
+        # --- UNIFIED INPUT SECTION ---
+        st.subheader("1. Upload PDFs (Optional)")
+        uploaded_files = st.file_uploader("Upload one or more PDF files", type="pdf", accept_multiple_files=True, key="pdf_uploader")
 
-        uploaded_files = []
-        url_input_text = ""
-        pasted_text = ""
+        st.subheader("2. Enter URLs (Optional)")
+        url_input_text = st.text_area("Enter one or more URLs (one per line):", height=150, key="url_input")
 
-        if st.session_state.input_method == "Upload PDF":
-            uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True, key="pdf_uploader")
-        elif st.session_state.input_method == "Enter URLs":
-            url_input_text = st.text_area("Enter one or more URLs (one per line):", height=150, key="url_input")
-        elif st.session_state.input_method == "Paste Text":
-            pasted_text = st.text_area("Paste your text here:", height=150, key="text_input")
+        st.subheader("3. Paste Text (Optional)")
+        pasted_text = st.text_area("Paste your text here:", height=150, key="text_input")
+        
+        st.markdown("---") # Visual separator
 
         def on_task_change_callback():
             if st.session_state.ui_task_selector != st.session_state.task_for_run :
@@ -592,7 +586,7 @@ def run_app():
         )
 
         is_input_provided = uploaded_files or url_input_text.strip() or pasted_text.strip()
-        if st.button(f"Process {st.session_state.input_method}", type="primary", disabled=not is_input_provided):
+        if st.button("Process All Inputs", type="primary", disabled=not is_input_provided):
             st.session_state.results = []
             st.session_state.run_processing_flag = True
             st.session_state.task_for_run = st.session_state.ui_task_selection
@@ -601,31 +595,33 @@ def run_app():
             st.rerun()
 
         if st.session_state.results:
-            # --- FIXED: Clear Results button logic ---
             if st.button("Clear Results"):
                 st.session_state.results = []
                 st.session_state.run_processing_flag = False
                 
-                # Safely clear text-based inputs
                 if 'url_input' in st.session_state:
                     st.session_state.url_input = ""
                 if 'text_input' in st.session_state:
                     st.session_state.text_input = ""
                 
-                # The file uploader does not need to be (and cannot be) cleared this way.
-                # A rerun is sufficient to reset the processing state.
                 st.rerun()
 
     if st.session_state.get('run_processing_flag', False):
+        # --- UNIFIED INPUT QUEUE BUILDER ---
         input_queue = []
-        if st.session_state.input_method == "Upload PDF":
-            input_queue = [{"identifier": f.name, "data": f, "type": "pdf"} for f in uploaded_files]
-        elif st.session_state.input_method == "Enter URLs":
+        
+        # 1. Add PDFs to queue
+        if uploaded_files:
+            input_queue.extend([{"identifier": f.name, "data": f, "type": "pdf"} for f in uploaded_files])
+        
+        # 2. Add URLs to queue
+        if url_input_text.strip():
             urls = extract_urls_from_text(url_input_text)
-            input_queue = [{"identifier": url, "data": url, "type": "url"} for url in urls]
-        elif st.session_state.input_method == "Paste Text":
-            if pasted_text.strip():
-                input_queue = [{"identifier": "Pasted Text", "data": pasted_text, "type": "text"}]
+            input_queue.extend([{"identifier": url, "data": url, "type": "url"} for url in urls])
+
+        # 3. Add Pasted Text to queue
+        if pasted_text.strip():
+            input_queue.append({"identifier": "Pasted Text", "data": pasted_text, "type": "text"})
 
         if not input_queue:
             st.warning("No valid input found to process. Please provide input and try again.")
