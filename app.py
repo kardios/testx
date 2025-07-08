@@ -658,6 +658,9 @@ def run_app():
                     status_text_placeholder.text(f"Processing item {i+1}/{total_items}: {identifier}...")
 
                     try:
+                        # --- FIXED: Initialize template variables ---
+                        prompt_step1_template, prompt_step2_template = None, None
+
                         source_text, extraction_error = None, None
                         if item['type'] == 'pdf':
                             source_text, extraction_error = extract_text_from_pdf(item['data'])
@@ -695,7 +698,7 @@ def run_app():
 
                         status_text_placeholder.text(f"Step 1 ({task_for_this_run}) for: {identifier}...")
                         start_time_step1 = time.perf_counter()
-                        step1_output, step1_error = get_llm_response(source_text, prompt_template_str, llm_a_for_this_run)
+                        step1_output, step1_error = get_llm_response(source_text, prompt_step1_template, llm_a_for_this_run)
                         current_file_result["time_step1_sec"] = round(time.perf_counter() - start_time_step1, 2)
                         if step1_error:
                             current_file_result["error_message"] = f"Step 1 error: {step1_error}"
@@ -714,6 +717,7 @@ def run_app():
 
                     except Exception as e:
                         current_file_result["error_message"] = f"An unexpected error occurred: {str(e)}"
+                    
                     st.session_state.results.append(current_file_result)
 
                 status_text_placeholder.success(f"All {total_items} item(s) processed for '{task_for_this_run}' task!")
