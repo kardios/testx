@@ -13,14 +13,14 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 APP_PASSWORD = os.environ.get("PASSWORD") # Password for app access
 
-# --- IMPORTANT: Replace these with actual API model identifiers ---
+# --- IMPORTANT: These models are specially chosen for the app ---
 MODEL_OPTIONS = {
     "Llama-3.3-70B (Groq)": {"id": "llama-3.3-70b-versatile", "provider": "groq"},
-    "GPT-4.1 (OpenAI)": {"id": "gpt-4.1", "provider": "openai"}, # CRITICAL: Replace "gpt-4.1" with a valid OpenAI model ID like "gpt-4o" or "gpt-4-turbo"
+    "GPT-4.1 (OpenAI)": {"id": "gpt-4.1", "provider": "openai"},
     "Llama-3.1-8B-Instant (Groq)": {"id": "llama-3.1-8b-instant", "provider": "groq"}
 }
 DEFAULT_LLM_A_NAME = "Llama-3.3-70B (Groq)"
-DEFAULT_LLM_B_NAME = "Llama-3.3-70B (Groq)" # Changed as per request
+DEFAULT_LLM_B_NAME = "Llama-3.3-70B (Groq)"
 
 # Task Definitions
 TASK_PARAGRAPH_SUMMARY = "Paragraph Summary"
