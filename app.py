@@ -418,12 +418,10 @@ def extract_urls_from_text(raw_text):
     found_urls = url_pattern.findall(raw_text)
     return list(dict.fromkeys(found_urls))
 
-# --- UPDATED: Function now uses JINA_API_KEY if available ---
 def fetch_content_from_url(url):
     """Fetches and returns the text content of a URL using Jina AI Reader."""
     jina_reader_url = f"https://r.jina.ai/{url}"
     headers = {}
-    # If a Jina API key is provided, add it to the request headers.
     if JINA_API_KEY:
         headers['Authorization'] = f'Bearer {JINA_API_KEY}'
 
@@ -603,12 +601,19 @@ def run_app():
             st.rerun()
 
         if st.session_state.results:
+            # --- FIXED: Clear Results button logic ---
             if st.button("Clear Results"):
                 st.session_state.results = []
                 st.session_state.run_processing_flag = False
-                st.session_state.pdf_uploader = []
-                st.session_state.url_input = ""
-                st.session_state.text_input = ""
+                
+                # Safely clear text-based inputs
+                if 'url_input' in st.session_state:
+                    st.session_state.url_input = ""
+                if 'text_input' in st.session_state:
+                    st.session_state.text_input = ""
+                
+                # The file uploader does not need to be (and cannot be) cleared this way.
+                # A rerun is sufficient to reset the processing state.
                 st.rerun()
 
     if st.session_state.get('run_processing_flag', False):
@@ -802,7 +807,6 @@ def run_app():
             st.caption("Click the button above to copy all expanded results to your clipboard.")
 
     st.markdown("---")
-    # --- UPDATED: Footer now mentions JINA_API_KEY ---
     st.caption("Ensure API keys (GROQ_API_KEY, OPENAI_API_KEY, JINA_API_KEY) and an optional PASSWORD are set as environment variables.")
     st.caption(f"Available Models: {', '.join(MODEL_OPTIONS.keys())}")
     st.caption("This app requires `streamlit`, `PyMuPDF`, `openai`, `groq`, `requests`, and `streamlit-copy-to-clipboard`.")
